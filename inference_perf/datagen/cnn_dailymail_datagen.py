@@ -17,7 +17,7 @@ from inference_perf.apis import InferenceAPIData, CompletionAPIData
 from inference_perf.utils.custom_tokenizer import CustomTokenizer
 from .base import DataGenerator
 from inference_perf.config import APIConfig, APIType, DataConfig
-from typing import Generator, List
+from typing import Generator, List, Optional
 from datasets import load_dataset
 import os
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class CNNDailyMailDataGenerator(DataGenerator):
-    def __init__(self, api_config: APIConfig, config: DataConfig, tokenizer: CustomTokenizer | None) -> None:
+    def __init__(self, api_config: APIConfig, config: DataConfig, tokenizer: Optional[CustomTokenizer]) -> None:
         super().__init__(api_config, config, tokenizer)
 
         if config.path is not None:
