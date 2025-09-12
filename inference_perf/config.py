@@ -92,10 +92,25 @@ class LoadStage(BaseModel):
     duration: int
 
 
+class StageGenType(Enum):
+    GEOM = "geometric"
+    LINEAR = "linear"
+
+
+class SweepConfig(BaseModel):
+    type: StageGenType
+    num_requests: int = 2000
+    timeout: float = 60
+    num_stages: int = 5
+    stage_duration: int = 180
+    saturation_percentile: float = 95
+
+
 class LoadConfig(BaseModel):
     type: LoadType = LoadType.CONSTANT
     interval: float = 1.0
     stages: List[LoadStage] = []
+    sweep: Optional[SweepConfig] = None
     num_workers: int = max(1, cpu_count())  # type: ignore
     worker_max_concurrency: int = 100
     worker_max_tcp_connections: int = 2500

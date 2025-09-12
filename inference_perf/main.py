@@ -198,6 +198,9 @@ def main_cli() -> None:
     if config.load is None:
         raise Exception("load config missing")
 
+    if len(config.load.stages) == 0 and config.load.sweep is None:
+        raise Exception("Load stages must be configured, or sweep must be configured")
+
     # Define DataGenerator
     datagen: DataGenerator
     if config.data:
