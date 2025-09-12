@@ -31,6 +31,7 @@ from inference_perf.datagen import (
     RandomDataGenerator,
     SharedPrefixDataGenerator,
     CNNDailyMailDataGenerator,
+    InfinityInstructDataGenerator,
 )
 from inference_perf.client.modelserver import ModelServerClient, vLLMModelServerClient, SGlangModelServerClient
 from inference_perf.client.metricsclient.base import MetricsClient, PerfRuntimeParameters
@@ -232,6 +233,8 @@ def main_cli() -> None:
             datagen = RandomDataGenerator(config.api, config.data, tokenizer)
         elif config.data.type == DataGenType.SharedPrefix:
             datagen = SharedPrefixDataGenerator(config.api, config.data, tokenizer)
+        elif config.data.type == DataGenType.InfinityInstruct:
+            datagen = InfinityInstructDataGenerator(config.api, config.data, tokenizer)
         else:
             datagen = MockDataGenerator(config.api, config.data, tokenizer)
     else:
