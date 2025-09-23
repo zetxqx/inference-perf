@@ -115,7 +115,7 @@ def analyze_reports(report_dir: str) -> None:
                 report_data = json.load(f)
 
             # Get QPS from report file
-            qps = report_data.get("load_summary", {}).get("requested_rate")
+            qps = report_data.get("load_summary", {}).get("achieved_rate")
             if qps is None:
                 logger.warning(f"Could not find requested_rate in {stage_file.name}. Skipping.")
                 continue
