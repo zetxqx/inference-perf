@@ -14,6 +14,8 @@ spec:
         app: inference-perf
     spec:
       restartPolicy: Never
+      nodeSelector:
+        node.kubernetes.io/instance-type: e2-standard-32
       containers:
         - name: inference-perf-container
           image: {{ .Values.job.image }}

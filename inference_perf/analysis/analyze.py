@@ -110,12 +110,15 @@ def analyze_reports(report_dir: str) -> None:
     itl_vs_otps: List[Tuple[float, float]] = []
 
     for stage_file in stage_files:
+        # warmup skip
+        if "stage_0" in stage_file.name:
+            continue
         try:
             with open(stage_file, "r") as f:
                 report_data = json.load(f)
 
             # Get QPS from report file
-            qps = report_data.get("load_summary", {}).get("requested_rate")
+            qps = report_data.get("load_summary", {}).get("achieved_rate")
             if qps is None:
                 logger.warning(f"Could not find requested_rate in {stage_file.name}. Skipping.")
                 continue
