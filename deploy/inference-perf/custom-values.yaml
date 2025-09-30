@@ -45,6 +45,10 @@ config:
       duration: 60
     - rate: 40
       duration: 60
+    - rate: 50
+      duration: 60
+    - rate: 60
+      duration: 60
 
   # -- API configuration
   api:
@@ -82,4 +86,4 @@ config:
   storage:
     google_cloud_storage:
       bucket_name: "bobgkeinference" # IMPORTANT: Update with your GCS bucket name
-      path: "precise-sho1" # Optional: a path prefix within the bucket
+      path: "precise-med2" # Optional: a path prefix within the bucket
