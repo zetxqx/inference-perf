@@ -1,0 +1,52 @@
+{
+    "load_summary": {},
+    "successes": {
+        "count": 750,
+        "rate": 4.518072,
+        "prompt_len": {
+            "mean": 0,
+            "rate": 33624.988188
+        },
+        "output_len": {
+            "mean": 0,
+            "rate": 4518.891328
+        },
+        "queue_len": {
+            "mean": 0
+        },
+        "request_latency": {
+            "mean": 67.905755,
+            "median": 66.682464,
+            "p90": 109.336493,
+            "p99": 118.933649
+        },
+        "time_to_first_token": {
+            "mean": 19.988976,
+            "median": 20.893372,
+            "p90": 37.884726,
+            "p99": 72.032432
+        },
+        "time_per_output_token": {
+            "mean": 0.048214,
+            "median": 0.037417,
+            "p90": 0.04811,
+            "p99": 0.649508
+        },
+        "kv_cache_usage_percentage": {
+            "mean": 0.0,
+            "median": 0.0,
+            "p90": 0.0,
+            "p99": 0.0
+        },
+        "num_requests_swapped": {
+            "mean": 0
+        },
+        "num_preemptions_total": {
+            "mean": 0
+        },
+        "prefix_cache_hit_percent": {
+            "mean": 46.0361757642185
+        }
+    },
+    "failures": {}
+}

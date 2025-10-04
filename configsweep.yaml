@@ -1,0 +1,43 @@
+load:
+  type: constant
+  interval: 10
+  worker_max_concurrency: 1000
+  sweep:                        # Automatically determine saturation point of the target service and generate stages
+    type: linear      # Produce a linear distribution [1.0, saturation] of rates for num_stages or geometric distribution clustered around the saturation point
+    timeout: 60                 # Length of time to run load to determine saturation
+    num_stages: 5               # Number of stages to generate
+    stage_duration: 180         # Duration of each generated stage
+    saturation_percentile: 95 
+    num_requests: 5000
+    
+api:
+  type: completion
+  streaming: true
+server:
+  type: vllm
+  model_name: meta-llama/Llama-3.1-70B-Instruct
+  base_url: http://35.212.191.82:80
+  ignore_eos: true
+tokenizer:
+  pretrained_model_name_or_path: meta-llama/Llama-3.1-70B-Instruct
+data:
+  type: shared_prefix
+  shared_prefix:
+    num_groups: 83              
+    num_prompts_per_group: 3
+    system_prompt_len: 8000
+    question_len: 1000
+    output_len: 1000
+
+report:
+  request_lifecycle:
+    summary: true
+    per_stage: true
+    per_request: true
+  prometheus:
+    summary: true
+    per_stage: true
+
+storage:
+  local_storage:
+    path: "./prefixcachebenchmark/precise5"

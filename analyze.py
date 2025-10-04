@@ -229,7 +229,18 @@ def analyze_reports(report_dirs: List[str], output_dir: str) -> None:
             except Exception as e:
                 logger.error(f"An unexpected error occurred while processing {stage_file.name}: {e}")
                 continue
+    
 
+    cared_qps = {3.0, 10.0, 15.0, 20.0, 30.0, 35.0, 43.0, 55.0, 60.0}
+    for key in qps_vs_ttps:
+        print(f"For {key}")
+        qps_vs_ttps[key].sort()
+        print(f"QPS {qps_vs_ttps[key]}")
+        # numbers = []
+        # for tup in qps_vs_ttftp90[key]:
+        #     if tup[0] in cared_qps:
+        #         numbers.append(tup)
+        # print(f"cared qps is {numbers}")
     # --- Generate Latency Plot ---
     latency_charts_to_generate = []
     if any(qps_vs_ttft.values()):
@@ -410,4 +421,4 @@ if __name__ == "__main__":
     parent_folder = Path(args.report_dirs[0])
     subfolders = [str(p) for p in parent_folder.iterdir() if p.is_dir()]
     print("analyzing subfolders:", subfolders)
-    analyze_reports(subfolders, args.output_dir)
+    analyze_reports(subfolders, parent_folder)

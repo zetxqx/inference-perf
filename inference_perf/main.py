@@ -53,6 +53,7 @@ from inference_perf.utils import CustomTokenizer, ReportFile
 from inference_perf.logger import setup_logging
 import asyncio
 import time
+import logging
 
 
 class InferencePerfRunner:
@@ -102,6 +103,8 @@ def main_cli() -> None:
 
     setup_logging(args.log_level)
 
+    logger = logging.getLogger(__name__)
+    logger.debug("This is bobzetian owned version of inference-perf.")
     if args.analyze:
         analyze_reports(args.analyze)
         return

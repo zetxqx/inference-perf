@@ -85,7 +85,7 @@ class openAIModelServerClient(ModelServerClient):
 
         request_data = json.dumps(payload)
 
-        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_tcp_connections)) as session:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_tcp_connections), timeout=aiohttp.ClientTimeout(total=600)) as session:
             start = time.perf_counter()
             try:
                 async with session.post(self.uri + data.get_route(), headers=headers, data=request_data) as response:

@@ -1,0 +1,66 @@
+job:
+  image: "us-central1-docker.pkg.dev/bobzetian-gke-dev/bobinference/inference-perf:latest"
+  memory: "50G"
+
+logLevel: DEBUG
+
+hfToken: ""
+
+config:
+  load:
+    type: poisson
+    stages:
+      # Warmup — seat residents (~1×S)
+      - rate: 15
+        duration: 50            # 15*50  = 750
+          
+      - rate: 40               
+        duration: 60           
+      - rate: 43
+        duration: 60           
+      - rate: 46
+        duration: 60           
+      - rate: 49
+        duration: 60                  
+      
+  api:
+    type: completion
+    streaming: true
+
+  server:
+    type: vllm
+    model_name: Qwen/Qwen3-32B
+    base_url: http://35.212.150.247:80
+    ignore_eos: true
+
+  tokenizer:
+    pretrained_model_name_or_path: Qwen/Qwen3-32B
+
+  data:
+    type: shared_prefix
+    shared_prefix:
+      num_groups: 150
+      num_prompts_per_group: 5
+      system_prompt_len: 6000
+      question_len: 1200
+      output_len: 1000
+  
+  metrics:
+    type: prometheus
+    prometheus:
+      google_managed: true
+      scrape_interval: 15
+
+  report:
+    request_lifecycle:
+      summary: true
+      per_stage: true
+      per_request: false
+    prometheus:
+      summary: true
+      per_stage: true
+
+  storage:
+    google_cloud_storage:
+      bucket_name: "bobgkeinference" # IMPORTANT: Update with your GCS bucket name
+      path: "saturationrun-01" # Optional: a path prefix within the bucket 
