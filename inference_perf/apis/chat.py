@@ -53,28 +53,31 @@ class ChatCompletionAPIData(InferenceAPIData):
         if config.streaming:
             output_text = ""
             output_token_times: List[float] = []
-            async for chunk_bytes in response.content:
-                try:
-                    chunk_str = chunk_bytes.decode("utf-8").removeprefix("data: ")
+            buffer = b""
+            async for chunk in response.content.iter_any():
+                buffer += chunk
+                while b"\n\n" in buffer:
+                    message, buffer = buffer.split(b"\n\n", 1)
                     output_token_times.append(time.perf_counter())
-                except UnicodeDecodeError:
-                    continue
-                for line in chunk_str.splitlines():
-                    if line == "[DONE]":
-                        break
-                    try:
-                        data = json.loads(line)
-                        choices = data.get("choices", [])
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            content = delta.get("content")
-                            if content:
-                                output_text += content
-                    except (json.JSONDecodeError, IndexError):
+                    for line in message.split(b"\n"):
+                        if line.startswith(b"data:"):
+                            data_str = line.removeprefix(b"data: ").strip()
+                            if data_str == b"[DONE]":
+                                break
+                            try:
+                                data = json.loads(data_str)
+                                choices = data.get("choices", [])
+                                if choices:
+                                    delta = choices[0].get("delta", {})
+                                    content = delta.get("content")
+                                    if content:
+                                        output_text += content
+                            except (json.JSONDecodeError, IndexError):
+                                continue
+                    else:
                         continue
-                else:
-                    continue
-                break
+                    break
+
             prompt_text = "".join([msg.content for msg in self.messages if msg.content])
             prompt_len = tokenizer.count_tokens(prompt_text)
             output_len = tokenizer.count_tokens(output_text)

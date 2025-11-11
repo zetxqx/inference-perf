@@ -71,7 +71,7 @@ class openAIModelServerClient(ModelServerClient):
     async def process_request(self, data: InferenceAPIData, stage_id: int, scheduled_time: float) -> None:
         payload = data.to_payload(
             model_name=self.model_name,
-            max_tokens=self.max_completion_tokens,
+            # max_tokens is set from the data config
             ignore_eos=self.ignore_eos,
             streaming=self.api_config.streaming,
         )
@@ -87,17 +87,20 @@ class openAIModelServerClient(ModelServerClient):
 
         async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(limit=self.max_tcp_connections), timeout=aiohttp.ClientTimeout(total=600)) as session:
             start = time.perf_counter()
+            response_content = ""
+            response_info = InferenceInfo()
             try:
                 async with session.post(self.uri + data.get_route(), headers=headers, data=request_data) as response:
-                    response_info = await data.process_response(
-                        response=response, config=self.api_config, tokenizer=self.tokenizer
-                    )
-                    response_content = await response.text()
-
-                    end_time = time.perf_counter()
                     error = None
                     if response.status != 200:
+                        response_content = await response.text()
                         error = ErrorResponseInfo(error_msg=response_content, error_type="Error response")
+                    else:
+                        response_info = await data.process_response(
+                            response=response, config=self.api_config, tokenizer=self.tokenizer
+                        )
+
+                    end_time = time.perf_counter()
 
                     self.metrics_collector.record_metric(
                         RequestLifecycleMetric(
@@ -117,8 +120,8 @@ class openAIModelServerClient(ModelServerClient):
                     RequestLifecycleMetric(
                         stage_id=stage_id,
                         request_data=request_data,
-                        response_data=response_content if "response_content" in locals() else "",
-                        info=response_info if "response_info" in locals() else InferenceInfo(),
+                        response_data=response_content,
+                        info=response_info,
                         error=ErrorResponseInfo(
                             error_msg=str(e),
                             error_type=type(e).__name__,

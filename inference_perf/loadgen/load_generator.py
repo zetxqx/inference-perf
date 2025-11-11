@@ -28,6 +28,7 @@ from asyncio import (
     set_event_loop_policy,
     get_event_loop,
 )
+import sys
 from typing import List, Tuple, TypeAlias, Optional
 import time
 import multiprocessing as mp
@@ -206,7 +207,8 @@ class LoadGenerator:
         # don't miss the initial scheuled request times
         start_time_epoch = time.time()
         start_time = time.perf_counter() + 1
-        num_requests = int(rate * duration)
+        max_concurrency_capacity = self.num_workers * self.worker_max_concurrency
+        num_requests = int(min(rate * duration, max_concurrency_capacity * duration))
 
         time_generator = timer.start_timer(start_time)
         if hasattr(self.datagen, "get_request"):
