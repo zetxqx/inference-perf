@@ -11,13 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from pathlib import Path
 from inference_perf.client.metricsclient.base import StageRuntimeInfo, StageStatus
-from .load_timer import LoadTimer, ConstantLoadTimer, PoissonLoadTimer
+from inference_perf.utils.trace_reader import AzurePublicDatasetReader
+from .load_timer import LoadTimer, ConstantLoadTimer, PoissonLoadTimer, TraceReplayLoadTimer
 from inference_perf.datagen import DataGenerator
 from inference_perf.apis import InferenceAPIData
 from inference_perf.client.modelserver import ModelServerClient
 from inference_perf.circuit_breaker import get_circuit_breaker
-from inference_perf.config import LoadConfig, LoadStage, LoadType, StageGenType
+from inference_perf.config import LoadConfig, LoadStage, LoadType, StageGenType, TraceFormat
 from asyncio import (
     CancelledError,
     Semaphore,
@@ -172,6 +174,16 @@ class LoadGenerator:
         self.sweep_config = load_config.sweep
         self.interrupt_sig = False
         signal.signal(signal.SIGINT, self._sigint_handler)
+        if self.load_type == LoadType.TRACE_REPLAY:
+            self.trace = load_config.trace
+
+            if self.trace is None:
+                raise ValueError("Trace file is required for trace replay load generator")
+
+            if self.trace.format == TraceFormat.AZURE_PUBLIC_DATASET:
+                self.trace_reader = AzurePublicDatasetReader()
+            else:
+                raise ValueError(f"Unsupported trace format: {self.trace.format}")
 
     def _sigint_handler(self, _signum: int, _frame: Optional[FrameType]) -> None:
         """SIGINT handler that sets interrup_sig flag to True"""
@@ -180,6 +192,10 @@ class LoadGenerator:
     def get_timer(self, rate: float, duration: float) -> LoadTimer:
         if self.load_type == LoadType.POISSON:
             return PoissonLoadTimer(rate=rate, duration=duration)
+        elif self.load_type == LoadType.TRACE_REPLAY:
+            if self.trace is None:
+                raise ValueError("Trace configuration is required for trace replay load generator")
+            return TraceReplayLoadTimer(trace_reader=self.trace_reader, trace_file=Path(self.trace.file))
         return ConstantLoadTimer(rate=rate, duration=duration)
 
     async def drain(self, queue: mp.Queue) -> None:  # type: ignore[type-arg]
@@ -218,7 +234,12 @@ class LoadGenerator:
         # don't miss the initial scheuled request times
         start_time_epoch = time.time()
         start_time = time.perf_counter() + 1
-        num_requests = int(rate * duration)
+
+        if self.datagen.trace is not None:
+            num_requests = self.datagen.get_request_count()
+        else:
+            num_requests = int(rate * duration)
+
         stage_status = StageStatus.RUNNING
 
         time_generator = timer.start_timer(start_time)
@@ -230,8 +251,12 @@ class LoadGenerator:
         else:
             # Datagen requires queueing request_data
             data_generator = self.datagen.get_data()
-            for _ in range(num_requests):
-                request_queue.put((stage_id, next(data_generator), next(time_generator)))
+            if self.datagen.trace is None:
+                for _ in range(num_requests):
+                    request_queue.put((stage_id, next(data_generator), next(time_generator)))
+            else:
+                for data, request_time in zip(data_generator, time_generator, strict=True):
+                    request_queue.put((stage_id, data, request_time))
 
         # Wait until all requests are finished processing
         with tqdm(total=1.0, desc=f"Stage {stage_id} progress") as pbar:
