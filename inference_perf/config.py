@@ -163,6 +163,11 @@ class SweepConfig(BaseModel):
     saturation_percentile: float = 95
 
 
+class MultiLoRAConfig(BaseModel):
+    name: str
+    split: float
+
+
 class LoadConfig(BaseModel):
     type: LoadType = LoadType.CONSTANT
     interval: float = 1.0
@@ -174,6 +179,7 @@ class LoadConfig(BaseModel):
     trace: Optional[TraceConfig] = None
     circuit_breakers: List[str] = []
     request_timeout: Optional[float] = None
+    lora_traffic_split: Optional[List[MultiLoRAConfig]] = None
 
     @model_validator(mode="after")
     def validate_load_config(self) -> "LoadConfig":
@@ -194,6 +200,12 @@ class LoadConfig(BaseModel):
                     raise ValueError(
                         f"Stage {i}: {self.type.value.upper()} load type requires StandardLoadStage, got {type(stage).__name__}"
                     )
+
+        # Validate multilora traffic split adds up to 1.0 if present
+        if self.lora_traffic_split is not None:
+            total = sum(config.split for config in self.lora_traffic_split)
+            if total != 1.0:
+                raise ValueError("MultiLoRA traffic split in load config does not add up to 1.0")
 
         return self
 
@@ -221,6 +233,8 @@ class RequestLifecycleMetricsReportConfig(BaseModel):
     summary: Optional[bool] = True
     per_stage: Optional[bool] = True
     per_request: Optional[bool] = False
+    per_adapter: Optional[bool] = True
+    per_adapter_stage: Optional[bool] = False
     percentiles: List[float] = [0.1, 1, 5, 10, 25, 50, 75, 90, 95, 99, 99.9]
 
 
