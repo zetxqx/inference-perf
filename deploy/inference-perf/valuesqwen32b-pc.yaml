@@ -32,7 +32,7 @@ config:
     shared_prefix:
       num_groups: 45
       num_prompts_per_group: 10
-      system_prompt_len: 8000
+      system_prompt_len: 8000 # change this to 30000 for high cache case
       question_len: 256
       output_len: 1024
   
