@@ -238,7 +238,7 @@ class LoadGenerator:
     def _set_worker_concurrency(self, concurrency_level: int) -> None:
         """Determines the per worker concurrency, handling cases where concurrency_level % num_workers != 0."""
         # Calculate new concurrency for worker (concurrency_level will always be > 0)
-        new_concurrency = concurrency_level // self.num_workers + 1
+        new_concurrency = concurrency_level // self.num_workers
         # Calculate index cutoff for workers with +1 concurrency
         remainder = concurrency_level % self.num_workers
         for worker in self.workers:
@@ -311,9 +311,17 @@ class LoadGenerator:
 
         time_generator = timer.start_timer(start_time)
         data_generator = self.datagen.get_data()
+        active_workers = self.num_workers
+        if concurrency_level:
+            # If concurrency_level is set, some worker may get 0 concurrency, then we should re-evaluate workers we can assign reqeusts to.
+            active_workers = min(self.num_workers, concurrency_level)
+
         for _ in range(num_requests):
             request_data = next(data_generator)
             lora_adapter = self._get_lora_adapter()
+            worker_id = request_data.prefered_worker_id
+            if worker_id >= 0:
+                worker_id = worker_id % active_workers
             request_queue.put((stage_id, request_data, next(time_generator), lora_adapter), request_data.prefered_worker_id)
 
         # Wait until all requests are finished processing
