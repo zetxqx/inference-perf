@@ -98,3 +98,29 @@ load:
 
 ### Note on Load Types
 Sweep is **only supported** when `load.type` is set to `constant` or `poisson`. If you attempt to configure a `sweep` alongside a `concurrent` load type, Pydantic validation in `LoadConfig` will raise a `ValueError`.
+
+## Viewing the Saturation Point
+
+Once `inference-perf` has completed its run, the calculated saturation point isn't exposed as a single standalone field in the summary JSON file. Instead, you can find it in two places:
+
+1. **Standard Output (Console Logs):**
+   Immediately after the preprocessing burst finishes, the tool prints the calculated saturation point directly to the console:
+   ```
+   INFO    inference_perf.loadgen.load_generator:load_generator.py:478 Saturation point estimated at 125.40 concurrent requests.
+   INFO    inference_perf.loadgen.load_generator:load_generator.py:488 Generated load stages: [25.08, 50.16, 75.24, 100.32, 125.4]
+   ```
+
+2. **Generated Reports (`stage_N_lifecycle_metrics.json`):**
+   Because sweep generates a series of load stages that mathematically progress up to the saturation point, the **final generated stage** effectively runs at the exact saturation limit.
+
+   If you set `num_stages: 5`, locate the JSON report for the final stage (e.g., `stage_4_lifecycle_metrics.json`). Within this file, look for the `load_summary` block. The `requested_rate` matches the calculated saturation point:
+   ```json
+   {
+     "load_summary": {
+       "count": 22572,
+       "send_duration": 180.0,
+       "requested_rate": 125.40,
+       "achieved_rate": 124.98
+     }
+   }
+   ```
