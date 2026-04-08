@@ -18,7 +18,8 @@ from inference_perf.config import APIConfig, APIType, CustomTokenizerConfig, Mul
 from inference_perf.apis import InferenceAPIData, InferenceInfo, RequestLifecycleMetric, ErrorResponseInfo
 from inference_perf.utils import CustomTokenizer
 from .base import ModelServerClient, ModelServerClientSession, PrometheusMetricMetadata
-from typing import List, Optional, Any
+from .otel_instrumentation import get_otel_instrumentation
+from typing import List, Optional, Any, Dict
 import aiohttp
 import asyncio
 import json
@@ -26,6 +27,8 @@ import time
 import logging
 import requests
 import ssl
+
+from ...datagen.otel_trace_replay_datagen import OTelChatCompletionAPIData
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +64,9 @@ class openAIModelServerClient(ModelServerClient):
         self.cert_path = cert_path
         self.key_path = key_path
         self.lora_config = lora_config
+
+        # Initialize OTEL instrumentation (configured via environment variables)
+        self.otel = get_otel_instrumentation()
 
         if model_name is None:
             supported_models = self.get_supported_models()
@@ -114,6 +120,10 @@ class openAIModelServerClient(ModelServerClient):
             await self._session.close()
             self._session = None
 
+        # Shutdown OTEL instrumentation to flush pending spans
+        if self.otel:
+            self.otel.shutdown()
+
     def get_supported_apis(self) -> List[APIType]:
         return []
 
@@ -149,6 +159,87 @@ class openAIModelServerClientSession(ModelServerClientSession):
         self.client = client
         self.session = aiohttp.ClientSession(timeout=timeout, connector=connector)
 
+    def _get_session_otel_context(self, data: InferenceAPIData) -> Optional[Dict[str, str]]:
+        """Get session OTEL context if available (for OTel trace replay)."""
+
+        if hasattr(data, "otel_context") and data.otel_context is not None:
+            return data.otel_context
+
+        return None
+
+    def _record_otel_metrics(
+        self,
+        span: Any,
+        data: InferenceAPIData,
+        response: Optional[aiohttp.ClientResponse],
+        response_info: Optional[InferenceInfo],
+        response_content: str,
+        error: Optional[ErrorResponseInfo],
+        start_time: float,
+        end_time: float,
+    ) -> None:
+        """Record OTEL metrics for the request."""
+        if response_info:
+            otel_response_info = {
+                "prompt_tokens": response_info.input_tokens,
+                "completion_tokens": response_info.output_tokens,
+                "total_latency": end_time - start_time,
+            }
+
+            # Calculate TTFT if token times are available
+            if response_info.output_token_times and len(response_info.output_token_times) > 0:
+                ttft = response_info.output_token_times[0] - start_time
+                otel_response_info["time_to_first_token"] = ttft
+
+                # Calculate average TPOT if we have multiple tokens
+                if len(response_info.output_token_times) > 1:
+                    total_decode_time = response_info.output_token_times[-1] - response_info.output_token_times[0]
+                    num_decode_tokens = len(response_info.output_token_times) - 1
+                    tpot = total_decode_time / num_decode_tokens if num_decode_tokens > 0 else 0
+                    otel_response_info["time_per_output_token"] = tpot
+
+            # Add finish reason from extra_info if available
+            if "finish_reason" in response_info.extra_info:
+                otel_response_info["finish_reason"] = response_info.extra_info["finish_reason"]
+
+            # Extract input and output following GenAI semantic conventions
+            try:
+                # Extract input based on request type
+                if hasattr(data, "messages"):
+                    # Chat completion - serialize messages as JSON string (gen_ai.input.messages)
+                    input_messages = [{"role": msg.role, "content": msg.content} for msg in data.messages]
+                    otel_response_info["input_messages"] = json.dumps(input_messages)  # type: ignore[assignment]
+                elif hasattr(data, "prompt"):
+                    # Text completion - store as prompt string (gen_ai.prompt)
+                    otel_response_info["input_prompt"] = data.prompt
+
+                # Extract output text (gen_ai.output.text)
+                if response and response.status == 200 and response_content:
+                    response_json = json.loads(response_content)
+                    choices = response_json.get("choices", [])
+                    if choices:
+                        if "message" in choices[0]:
+                            # Chat completion response
+                            output_text = choices[0].get("message", {}).get("content", "")
+                            otel_response_info["output_text"] = output_text
+                        elif "text" in choices[0]:
+                            # Text completion response
+                            output_text = choices[0].get("text", "")
+                            otel_response_info["output_text"] = output_text
+            except Exception as e:
+                logger.debug(f"Failed to extract messages for OTEL: {e}")
+
+            self.client.otel.record_response_metrics(
+                span=span,
+                response_info=otel_response_info,
+                error=error.error_msg if error else None,
+            )
+        elif error:
+            self.client.otel.record_response_metrics(
+                span=span,
+                error=error.error_msg,
+            )
+
     async def process_request(
         self, data: InferenceAPIData, stage_id: int, scheduled_time: float, lora_adapter: Optional[str] = None
     ) -> None:
@@ -175,6 +266,9 @@ class openAIModelServerClientSession(ModelServerClientSession):
 
         request_data = json.dumps(payload)
 
+        # Determine operation name based on API type
+        operation_name = "chat.completions" if self.client.api_config.type == APIType.Chat else "completions"
+
         start = time.perf_counter()
         response: Optional[aiohttp.ClientResponse] = None
         response_info = None
@@ -182,44 +276,90 @@ class openAIModelServerClientSession(ModelServerClientSession):
         response_content = ""
         caught_exception: Optional[Exception] = None
 
-        try:
-            async with self.session.post(self.client.uri + data.get_route(), headers=headers, data=request_data) as resp:
-                response = resp
-                try:
-                    if response.status == 200:
-                        response_info = await data.process_response(
-                            response=response,
-                            config=self.client.api_config,
-                            tokenizer=self.client.tokenizer,
-                            lora_adapter=lora_adapter,
-                        )
-                    else:
-                        error = ErrorResponseInfo(
-                            error_msg=await response.text(),
-                            error_type=f"HTTP Error {response.status}",
-                        )
-                finally:
-                    # Always try to consume the payload to return the connection to the pool
+        # Get session OTEL context if available (for OTel trace replay)
+        parent_context = self._get_session_otel_context(data)
+
+        # Start OTEL tracing
+        with self.client.otel.trace_llm_request(
+            operation_name=operation_name,
+            model_name=effective_model_name,
+            request_data=payload,
+            parent_context=parent_context,
+        ) as span:
+            try:
+                async with self.session.post(self.client.uri + data.get_route(), headers=headers, data=request_data) as resp:
+                    response = resp
                     try:
+                        # Read response body once to avoid double-read issue
                         response_content = await response.text()
-                    except Exception:
+
+                        if response.status == 200:
+                            response_info = await data.process_response(
+                                response=response,
+                                config=self.client.api_config,
+                                tokenizer=self.client.tokenizer,
+                                lora_adapter=lora_adapter,
+                            )
+                        else:
+                            # Handle HTTP error responses (status != 200).
+                            #
+                            # For OTel trace replay, process_failure() is called to:
+                            # 1. Mark the session as failed in WorkerSessionTracker
+                            # 2. Call registry.record_failure() to unblock dependent events via EventFailedError
+                            # 3. Immediately notify the main process via session_completion_queue
+                            #
+                            # This ensures that if request X fails and request Y depends on X's output,
+                            # Y raises EventFailedError and skips rather than hanging indefinitely.
+                            #
+                            # Note: The original code only logged errors for non-200 responses without
+                            # calling process_failure(). This special handling for OTelChatCompletionAPIData
+                            # ensures proper failure propagation in trace replay scenarios.
+
+                            if isinstance(data, OTelChatCompletionAPIData) and response is not None:
+                                error = ErrorResponseInfo(
+                                    error_msg=response_content,
+                                    error_type=f"HTTP Error {response.status}",
+                                )
+                                exception = Exception(f"{error.error_type}: {error.error_msg}")
+                                response_info = await data.process_failure(
+                                    response=response,
+                                    config=self.client.api_config,
+                                    tokenizer=self.client.tokenizer,
+                                    exception=exception,
+                                    lora_adapter=lora_adapter,
+                                )
+                    except Exception as read_error:
+                        # Handle errors reading response body
                         if not response_content:
-                            response_content = "Failed to read response text"
+                            response_content = f"Failed to read response text: {read_error}"
+                        raise
 
-        except aiohttp.ClientError as e:
-            caught_exception = e
-            logger.error("Client error during request:", exc_info=True)
-            error = ErrorResponseInfo(error_msg=str(e), error_type=type(e).__name__)
-        except asyncio.TimeoutError as e:
-            caught_exception = e
-            logger.error("Request timed out:", exc_info=True)
-            error = ErrorResponseInfo(error_msg="Request timed out", error_type="TimeoutError")
-        except Exception as e:
-            caught_exception = e
-            logger.error("Unexpected error during request processing:", exc_info=True)
-            error = ErrorResponseInfo(error_msg=str(e), error_type=type(e).__name__)
+            except aiohttp.ClientError as e:
+                caught_exception = e
+                logger.error("Client error during request:", exc_info=True)
+                error = ErrorResponseInfo(error_msg=str(e), error_type=type(e).__name__)
+            except asyncio.TimeoutError as e:
+                caught_exception = e
+                logger.error("Request timed out:", exc_info=True)
+                error = ErrorResponseInfo(error_msg="Request timed out", error_type="TimeoutError")
+            except Exception as e:
+                caught_exception = e
+                logger.error("Unexpected error during request processing:", exc_info=True)
+                error = ErrorResponseInfo(error_msg=str(e), error_type=type(e).__name__)
 
-        end_time = time.perf_counter()
+            end_time = time.perf_counter()
+
+            # Record OTEL metrics
+            self._record_otel_metrics(
+                span=span,
+                data=data,
+                response=response,
+                response_info=response_info,
+                response_content=response_content,
+                error=error,
+                start_time=start,
+                end_time=end_time,
+            )
 
         if caught_exception is not None and not response_info:
             response_info = await data.process_failure(
@@ -232,6 +372,7 @@ class openAIModelServerClientSession(ModelServerClientSession):
 
         metric = RequestLifecycleMetric(
             stage_id=stage_id,
+            session_id=data.session_id if isinstance(data.session_id, str) else None,
             request_data=request_data,
             response_data=response_content,
             info=response_info if response_info else InferenceInfo(),
