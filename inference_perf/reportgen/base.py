@@ -63,6 +63,7 @@ def summarize(items: List[float], percentiles: List[float]) -> Optional[dict[str
 
 
 class ResponsesSummary(BaseModel):
+    benchmark_time_seconds: float
     load_summary: dict[str, Any]
     successes: dict[str, Any]
     failures: dict[str, Any]
@@ -181,6 +182,7 @@ def calculate_goodput_metrics(
 
 def summarize_prometheus_metrics(metrics: ModelServerMetrics) -> ResponsesSummary:
     return ResponsesSummary(
+        benchmark_time_seconds=0.0,
         load_summary={},  # model server doesn't report failed requests
         failures={},
         successes={
@@ -463,6 +465,7 @@ def summarize_requests(
         successes_dict["goodput_metrics"] = goodput_metrics
 
     return ResponsesSummary(
+        benchmark_time_seconds=total_time,
         load_summary=load_summary,
         successes=successes_dict,
         failures={
