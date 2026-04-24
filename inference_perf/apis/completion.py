@@ -16,10 +16,10 @@
 from typing import Any, Optional
 
 from aiohttp import ClientResponse
-from inference_perf.apis import InferenceAPIData, InferenceInfo
-from inference_perf.apis.streaming_parser import parse_sse_stream
+from inference_perf.apis import InferenceAPIData, InferenceInfo, UnaryInferenceResponseInfo, StreamedInferenceResponseInfo
 from inference_perf.utils.custom_tokenizer import CustomTokenizer
 from inference_perf.config import APIConfig, APIType
+from inference_perf.apis.streaming_parser import parse_sse_stream
 
 
 class CompletionAPIData(InferenceAPIData):
@@ -52,17 +52,20 @@ class CompletionAPIData(InferenceAPIData):
     ) -> InferenceInfo:
         if config.streaming:
             # Use shared streaming parser with completion-specific content extraction
-            output_text, output_token_times, raw_content = await parse_sse_stream(
+            output_text, message_times, raw_content, response_chunks = await parse_sse_stream(
                 response, extract_content=lambda data: data.get("choices", [{}])[0].get("text")
             )
 
             prompt_len = tokenizer.count_tokens(self.prompt)
             output_len = tokenizer.count_tokens(output_text)
-            self.model_response = output_text
             return InferenceInfo(
                 input_tokens=prompt_len,
-                output_tokens=output_len,
-                output_token_times=output_token_times,
+                response_info=StreamedInferenceResponseInfo(
+                    response_chunks=response_chunks,
+                    chunk_times=message_times,
+                    output_tokens=output_len,
+                    output_token_times=message_times,
+                ),
                 lora_adapter=lora_adapter,
                 extra_info={"raw_response": raw_content},
             )
@@ -75,4 +78,8 @@ class CompletionAPIData(InferenceAPIData):
             output_text = choices[0].get("text", "")
             output_len = tokenizer.count_tokens(output_text)
             self.model_response = output_text
-            return InferenceInfo(input_tokens=prompt_len, output_tokens=output_len, lora_adapter=lora_adapter)
+            return InferenceInfo(
+                input_tokens=prompt_len,
+                response_info=UnaryInferenceResponseInfo(output_tokens=output_len),
+                lora_adapter=lora_adapter,
+            )
