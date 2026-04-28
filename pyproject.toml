@@ -160,6 +160,7 @@ module = [
     "datasets.*",
     "matplotlib.*",
     "boto3.*",
+    "botocore.*",
     "opentelemetry.*",
     "google.cloud.*",
 ]
