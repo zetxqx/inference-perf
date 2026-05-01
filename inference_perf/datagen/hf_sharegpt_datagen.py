@@ -96,8 +96,9 @@ class HFShareGPTDataGenerator(DataGenerator):
                 completion = self.get_conversation_turn_content(data, 1)
                 if not prompt:
                     continue
+                prompt_ids = self.tokenizer.get_tokenizer().encode(prompt)
+                prompt_tokens = len(prompt_ids)
                 completion_tokens = self.tokenizer.count_tokens(completion)
-                prompt_tokens = self.tokenizer.count_tokens(prompt)
 
                 if self.input_distribution:
                     if prompt_tokens < self.input_distribution.min:
@@ -134,6 +135,9 @@ class HFShareGPTDataGenerator(DataGenerator):
         return s
 
     def get_chat_data(self) -> Generator[InferenceAPIData, None, None]:
+        if self.tokenizer is None:
+            raise Exception("Tokenizer is required for chat API of HFShareGPTDataGenerator")
+
         while True:
             data = next(self.sharegpt_dataset)
             if (
@@ -143,15 +147,14 @@ class HFShareGPTDataGenerator(DataGenerator):
                 or len(data[self.data_key]) == 0
             ):
                 continue
-            yield ChatCompletionAPIData(
-                messages=[
-                    ChatMessage(
-                        role=SHAREGPT_HF_CHAT_ROLE_MAP.get(conversation[self.role_key], "user"),
-                        content=conversation[self.content_key],
-                    )
-                    for conversation in data[self.data_key]
-                ]
-            )
+
+            messages = []
+            for conversation in data[self.data_key]:
+                role = SHAREGPT_HF_CHAT_ROLE_MAP.get(conversation[self.role_key], "user")
+                content = conversation[self.content_key]
+                messages.append(ChatMessage(role=role, content=content))
+
+            yield ChatCompletionAPIData(messages=messages)
 
     def is_io_distribution_supported(self) -> bool:
         return True
