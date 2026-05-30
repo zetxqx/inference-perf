@@ -44,6 +44,7 @@ class CompletionAPIData(InferenceAPIData):
             "prompt": self.prompt,
             "max_tokens": self.max_tokens,
             "ignore_eos": ignore_eos,
+            "echo": False,
             "stream": streaming,
             **({"stream_options": {"include_usage": True}} if streaming else {}),
         }
@@ -57,8 +58,16 @@ class CompletionAPIData(InferenceAPIData):
                 response, extract_content=lambda data: data.get("choices", [{}])[0].get("text")
             )
 
-            prompt_len = tokenizer.count_tokens(self.prompt)
-            output_len = tokenizer.count_tokens(output_text)
+            prompt_len = (
+                server_usage.get("prompt_tokens")
+                if server_usage and "prompt_tokens" in server_usage
+                else tokenizer.count_tokens(self.prompt)
+            )
+            output_len = (
+                server_usage.get("completion_tokens")
+                if server_usage and "completion_tokens" in server_usage
+                else tokenizer.count_tokens(output_text)
+            )
             self.model_response = output_text
             return InferenceInfo(
                 request_metrics=RequestMetrics(text=Text(input_tokens=prompt_len)),
@@ -74,7 +83,12 @@ class CompletionAPIData(InferenceAPIData):
             )
         else:
             data = await response.json()
-            prompt_len = tokenizer.count_tokens(self.prompt)
+            usage = data.get("usage")
+            prompt_len = (
+                usage.get("prompt_tokens")
+                if usage and "prompt_tokens" in usage
+                else tokenizer.count_tokens(self.prompt)
+            )
             choices = data.get("choices", [])
             if len(choices) == 0:
                 return InferenceInfo(
@@ -82,7 +96,11 @@ class CompletionAPIData(InferenceAPIData):
                     lora_adapter=lora_adapter,
                 )
             output_text = choices[0].get("text", "")
-            output_len = tokenizer.count_tokens(output_text)
+            output_len = (
+                usage.get("completion_tokens")
+                if usage and "completion_tokens" in usage
+                else tokenizer.count_tokens(output_text)
+            )
             self.model_response = output_text
             return InferenceInfo(
                 request_metrics=RequestMetrics(text=Text(input_tokens=prompt_len)),
