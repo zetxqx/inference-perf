@@ -47,8 +47,12 @@ class CounterMetric(Metric[CounterResult]):
     def _spanning(self, fn: str, duration: float, filters: str) -> str:
         # `fn` applied to the `_total`-suffixed and bare forms of the name, whichever exists;
         # `or` unions the two so mixed fleets (old and new exporters) still sum correctly.
+        # Histogram series names (`_count`/`_sum`/`_bucket`) can never carry `_total`, so
+        # counters over them keep a single exact leg.
         base = self.metric_name.removesuffix("_total")
         d = f"{duration:.0f}s"
+        if base.endswith(("_count", "_sum", "_bucket")):
+            return f"{fn}({base}{{{filters}}}[{d}])"
         return f"{fn}({base}_total{{{filters}}}[{d}]) or {fn}({base}{{{filters}}}[{d}])"
 
     def get_queries(self, duration: float, filters: str) -> List[str]:

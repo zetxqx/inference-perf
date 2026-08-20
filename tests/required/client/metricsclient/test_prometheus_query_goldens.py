@@ -114,6 +114,13 @@ def test_counter_declared_with_total_suffix_is_not_double_suffixed() -> None:
     )
 
 
+def test_counter_over_histogram_series_keeps_single_leg() -> None:
+    """`_count`/`_sum`/`_bucket` series can never carry a `_total` suffix, so a counter over
+    one (e.g. sglang's requests) must not select a nonexistent `_count_total` leg."""
+    metric = CounterMetric("sglang:e2e_request_latency_seconds_count")
+    assert metric.get_queries(60.0, "")[0] == "sum(increase(sglang:e2e_request_latency_seconds_count{}[60s]))"
+
+
 def test_histogram_queries_and_parse() -> None:
     metric = HistogramMetric("vllm:e2e_request_latency_seconds")
     f = "model_name='m'"
