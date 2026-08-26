@@ -99,6 +99,7 @@ Explore detailed documentation for specific topics:
 | **Synthetic Agentic** *(implementation in progress)* | Data/load type for generating agentic workloads (tool loops, sub-agent fan-out, context growth) procedurally, without a recorded trace. | [synthetic_agentic.md](./docs/synthetic_agentic.md) |
 | **Weka Trace Replay** | Data/load type for replaying raw Weka agent traces via graph-based session execution. | [weka_trace_replay.md](./docs/weka_trace_replay.md) |
 | **Conversation Replay** | Data/load type for benchmarking concurrent multi-turn agentic conversations with configurable distributions. | [conversation_replay.md](./docs/conversation_replay.md) |
+| **BR0.2 Reports** | Always-emitted llm-d-benchmark BR0.2 partial per stage; designed for clean yq-merge with other producers. | [br_v0_2.md](./docs/br_v0_2.md) |
 | **Analysis** | Visualizations and plots for performance metrics. | [analysis.md](./docs/analysis.md) |
 
 ---
