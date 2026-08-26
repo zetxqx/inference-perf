@@ -213,6 +213,43 @@ def extract_cached_prompt_tokens(server_usage: Optional[dict[str, Any]]) -> Opti
     return min(max(cached, 0), prompt), prompt
 
 
+# Which usage keys carry token counts depends on the API: OpenAI-compatible servers report
+# prompt_tokens / completion_tokens, the Anthropic Messages API reports input_tokens /
+# output_tokens.
+SERVER_PROMPT_TOKEN_KEYS = ("prompt_tokens", "input_tokens")
+SERVER_OUTPUT_TOKEN_KEYS = ("completion_tokens", "output_tokens")
+
+
+def server_reported_tokens(server_usage: Optional[dict[str, Any]], keys: tuple[str, ...]) -> Optional[float]:
+    """Token count the server reported under any of ``keys``, or None if it reported none.
+
+    None is the provenance signal: the number the report carries for that request
+    came from client-side tokenization rather than from the server.
+    """
+    if not server_usage:
+        return None
+    for key in keys:
+        value = server_usage.get(key)
+        if value is not None:
+            return safe_float(value)
+    return None
+
+
+def count_client_fallbacks(metrics: List[RequestLifecycleMetric], keys: tuple[str, ...]) -> int:
+    """How many of these requests carry a client-side token count rather than the server's.
+
+    Reported next to token_count_mismatches rather than inside the token summaries,
+    which stay a total plus a pure distribution. A nonzero count means that
+    distribution mixes sources.
+    """
+    return sum(
+        1
+        for metric in metrics
+        if server_reported_tokens(metric.info.response_metrics.server_usage if metric.info.response_metrics else None, keys)
+        is None
+    )
+
+
 def summarize_prompt_token_usage(metrics: List[RequestLifecycleMetric], percentiles: List[float]) -> dict[str, float]:
     """Input tokens already resolved at request time (request_metrics.text.input_tokens).
 
@@ -220,6 +257,8 @@ def summarize_prompt_token_usage(metrics: List[RequestLifecycleMetric], percenti
     provided it, otherwise the client-side tokenization — resolved once by
     _resolve_prompt_tokens at response-processing time and stored in request_metrics.
     Also reports the cached/uncached split from usage.prompt_tokens_details when present.
+    How many of these requests fell back to the client-side count is counted separately,
+    by count_client_fallbacks.
     """
     prompt_tokens_total = 0.0
     prompt_tokens_cached = 0.0
@@ -251,8 +290,9 @@ def summarize_output_token_usage(metrics: List[RequestLifecycleMetric], percenti
     The server-side count is exact (a count of decode steps), unlike a
     client-side re-tokenization of the streamed text. Reports the aggregate
     total alongside the per-request distribution (min/mean/max/percentiles).
-    Falls back to the client-side output_tokens when the server does not report
-    usage. Mirrors summarize_prompt_token_usage on the input side.
+    Falls back to the client-side output_tokens for any request whose usage does
+    not report an output count; count_client_fallbacks counts those requests.
+    Mirrors summarize_prompt_token_usage on the input side.
     """
     output_tokens_total = 0.0
     per_request: List[float] = []
@@ -260,14 +300,11 @@ def summarize_output_token_usage(metrics: List[RequestLifecycleMetric], percenti
     for metric in metrics:
         response_metrics = metric.info.response_metrics
         server_usage = response_metrics.server_usage if response_metrics else None
-        completion_tokens = (
-            server_usage.get("completion_tokens")
-            if server_usage
-            else (response_metrics.output_tokens if response_metrics else None)
-        )
-        completion_tokens_value = safe_float(completion_tokens)
-        output_tokens_total += completion_tokens_value
-        per_request.append(completion_tokens_value)
+        completion_tokens = server_reported_tokens(server_usage, SERVER_OUTPUT_TOKEN_KEYS)
+        if completion_tokens is None:
+            completion_tokens = safe_float(response_metrics.output_tokens if response_metrics else None)
+        output_tokens_total += completion_tokens
+        per_request.append(completion_tokens)
 
     result = {"total": output_tokens_total}
     if distribution := summarize(per_request, percentiles):
@@ -279,15 +316,21 @@ def effective_output_tokens(response_metrics: Optional[ResponseMetrics], use_ser
     """Output token count used to normalize per-token latency metrics (TPOT, NTPOT).
 
     Defaults to the client-side re-tokenized count (`output_tokens`). When
-    `use_server_output_tokens` is set and the server reported an exact
-    `usage.completion_tokens`, that count is used instead.
+    `use_server_output_tokens` is set and the server reported a count under any of
+    SERVER_OUTPUT_TOKEN_KEYS, that count is used instead. Reads the same keys as
+    summarize_output_token_usage so "the server's output count" means one thing:
+    against a server reporting the Anthropic spelling, resolving only
+    `completion_tokens` here left the flag a silent no-op while the report field
+    said the count was server-sourced.
     """
     if response_metrics is None:
         return 0
-    if use_server_output_tokens and response_metrics.server_usage:
-        completion_tokens = response_metrics.server_usage.get("completion_tokens")
-        if completion_tokens:
-            return int(completion_tokens)
+    if use_server_output_tokens:
+        # `is not None`, not truthiness: a server that reports 0 output tokens has
+        # counted the request, and the report's own summary already records that 0.
+        server_tokens = server_reported_tokens(response_metrics.server_usage, SERVER_OUTPUT_TOKEN_KEYS)
+        if server_tokens is not None:
+            return int(server_tokens)
     return response_metrics.output_tokens
 
 
@@ -700,6 +743,12 @@ def summarize_requests(
         ),
         "output_tokens": summarize_output_token_usage(all_successful, percentiles),
         "token_count_mismatches": mismatched_requests,
+        # Keyed by side, not by the sibling field names: the values count requests,
+        # and a prompt_tokens/output_tokens key here would read as a token count.
+        "client_fallback_requests": {
+            "prompt": count_client_fallbacks(all_successful, SERVER_PROMPT_TOKEN_KEYS),
+            "output": count_client_fallbacks(all_successful, SERVER_OUTPUT_TOKEN_KEYS),
+        },
     }
     if goodput_metrics:
         successes_dict["goodput_metrics"] = goodput_metrics
