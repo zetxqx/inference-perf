@@ -46,14 +46,14 @@ Inference Perf is a generative AI (GenAI) inference performance benchmarking too
 
 # Statement of need
 
-With the rapid adoption of Large Language Models (LLMs) and GenAI, there is a growing need to accurately measure and compare the performance of inference serving systems. Different model servers (e.g., vLLM, TGI, SGLang) and deployment orchestrators (e.g., Kubernetes) introduce substantial variability in performance. Existing tools often lack standardized metrics or GenAI inference–specific capabilities (e.g., @k6; @locust) or are tightly coupled to specific frameworks (e.g., @vllm-benchmark; @tgi-benchmark; @genai-perf) where their goal is to provide a tool for developers working on the specific framework to benchmark their system. As a result, it is often hard to reproduce benchmark results across different serving stacks and environments. Inference Perf addresses this gap by providing a scalable, agnostic, and comprehensive benchmarking suite for GenAI workloads. It supports various real-world and synthetic datasets, different load patterns (e.g., burst, saturation), and integrates with standard cloud-native observability tools like Prometheus [@prometheus], allowing it to benchmark both smaller-scale systems in development as well as large production-scale deployments orchestrated by Kubernetes. Crucially, it provides a standardized comparison between different model servers and serving stacks across various use cases.
+With the rapid adoption of Large Language Models (LLMs) and GenAI, there is a growing need to accurately measure and compare the performance of inference serving systems. Different model servers (e.g., vLLM, TGI, SGLang) and deployment orchestrators (e.g., Kubernetes) introduce substantial variability in performance. Existing tools often lack standardized metrics or GenAI inference–specific capabilities (e.g., [@k6; @locust]) or are tightly coupled to specific frameworks (e.g., [@vllm-benchmark; @tgi-benchmark; @genai-perf]) where their goal is to provide a tool for developers working on the specific framework to benchmark their system. As a result, it is often hard to reproduce benchmark results across different serving stacks and environments. Inference Perf addresses this gap by providing a scalable, agnostic, and comprehensive benchmarking suite for GenAI workloads. It supports various real-world and synthetic datasets, different load patterns (e.g., burst, saturation), and integrates with standard cloud-native observability tools like Prometheus [@prometheus], allowing it to benchmark both smaller-scale systems in development as well as large production-scale deployments orchestrated by Kubernetes. Crucially, it provides a standardized comparison between different model servers and serving stacks across various use cases.
 
 # State of the field
 
 There are two kinds of performance benchmarking tools for GenAI inference that are commonly used to measure inference performance of a model serving stack:
 
-1. Web-based benchmarks (e.g., @k6; @locust)
-2. Model server benchmarks (e.g., @vllm-benchmark; @tgi-benchmark; @sglang-benchmark; @genai-perf)
+1. Web-based benchmarks (e.g., [@k6; @locust])
+2. Model server benchmarks (e.g., [@vllm-benchmark; @tgi-benchmark; @sglang-benchmark; @genai-perf])
 
 Web-based benchmarks are generic web server benchmarking tools which offer battle-tested way to reliably generate traffic against specific HTTP endpoints. While these can be used to benchmark LLMs and GenAI workloads, they lack the standardized set of metrics that we want to measure with inference, often at token level. To measure these token-level metrics, streaming request support, tokenizer support and other features specific to the GenAI workload that is being tested are needed. While some of these tools allow extensions, writing custom extensions is restrictive in general and is not ideal for GenAI benchmarking.
 
@@ -80,7 +80,7 @@ Inference Perf is built with a modular architecture comprised of several key com
 ## Key features
 
 - Scalability to support large production deployments with request rate generation up to 10k+ requests per second via a novel multi-process load generator capable of maintaining accurate QPS over longer durations.
-- Support for multiple backends including vLLM [@vllm], SGLang [@sglang], and HuggingFace TGI [@tgi]. It is also extensible to support any serving stack which follows the OpenAI API, like llm-d [@llm-d] and NVIDIA Dynamo [@dynamo] which are not model servers, but entire optimized inference stacks with advanced orchestration capabilities.
+- Support for multiple backends including vLLM [@vllm], SGLang [@sglang], and Hugging Face TGI [@tgi]. It is also extensible to support any serving stack which follows the OpenAI API, like llm-d [@llm-d] and NVIDIA Dynamo [@dynamo] which are not model servers, but entire optimized inference stacks with advanced orchestration capabilities.
 - Simulation of complex scenarios like multi-turn chat conversations, shared prefix caching and autoscaling.
 - Comprehensive metrics collection from both the benchmarking client and the model server to aid in debugging performance issues and discrepancies.
 - Observability into the load generated by the benchmarking client. This is important because benchmarking clients can be artificially constrained by external factors like resource contention on client machines, underlying Python library limitations, etc.\ which can lead to performance differences. Being able to observe these limitations is essential.
@@ -111,7 +111,7 @@ The price–performance metrics below are not directly reported by Inference Per
 - Price per million input tokens
 - Throughput per dollar
 
-The above metrics can also be plotted into charts using the ``analyze'' command in the tool at various request rates (QPS) to understand how the latency and throughput scales with the load. The charts below demonstrate benchmarks run on the llama3.1-8b model with NVIDIA H100 GPUs on vLLM version v0.11.0. Further details of the benchmark run and other similar examples can be found in the demos section of the source repository [@inference-perf-demos].
+The above metrics can also be plotted into charts using the `analyze` command in the tool at various request rates (QPS) to understand how the latency and throughput scales with the load. The charts below demonstrate benchmarks run on the llama3.1-8b model with NVIDIA H100 GPUs on vLLM version v0.11.0. Further details of the benchmark run and other similar examples can be found in the demos section of the source repository [@inference-perf-demos].
 
 ![Throughput vs QPS](assets/throughput_vs_qps.png)
 
