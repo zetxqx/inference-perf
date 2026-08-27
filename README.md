@@ -4,6 +4,7 @@
 [![Container Image](https://img.shields.io/badge/Container-latest-blue)](https://quay.io/inference-perf/inference-perf)
 [![Tests](https://img.shields.io/github/actions/workflow/status/kubernetes-sigs/inference-perf/unit_test.yml?branch=main&label=Tests)](https://github.com/kubernetes-sigs/inference-perf/actions/workflows/unit_test.yml)
 [![Join Slack](https://img.shields.io/badge/Join_Slack-blue?logo=slack)](https://kubernetes.slack.com/?redir=%2Fmessages%2Finference-perf)
+[![DOI](https://joss.theoj.org/papers/10.21105/joss.10314/status.svg)](https://doi.org/10.21105/joss.10314)
 
 # Inference Perf
 
