@@ -1,0 +1,56 @@
+cff-version: "1.2.0"
+authors:
+- family-names: Chandrasekar
+  given-names: Ashok
+  orcid: "https://orcid.org/0009-0009-3481-9173"
+- family-names: Varghese
+  given-names: Sachin
+  orcid: "https://orcid.org/0009-0007-5015-5173"
+- family-names: Kramberger
+  given-names: Jason
+  orcid: "https://orcid.org/0009-0006-8517-7973"
+- family-names: Slabe
+  given-names: Brendan
+  orcid: "https://orcid.org/0009-0005-1730-753X"
+- family-names: Wang
+  given-names: Chen
+  orcid: "https://orcid.org/0000-0003-0204-2362"
+- family-names: Tang
+  given-names: Yuan
+  orcid: "https://orcid.org/0000-0001-5243-233X"
+doi: 10.5281/zenodo.21889595
+message: If you use this software, please cite our article in the
+  Journal of Open Source Software.
+preferred-citation:
+  authors:
+  - family-names: Chandrasekar
+    given-names: Ashok
+    orcid: "https://orcid.org/0009-0009-3481-9173"
+  - family-names: Varghese
+    given-names: Sachin
+    orcid: "https://orcid.org/0009-0007-5015-5173"
+  - family-names: Kramberger
+    given-names: Jason
+    orcid: "https://orcid.org/0009-0006-8517-7973"
+  - family-names: Slabe
+    given-names: Brendan
+    orcid: "https://orcid.org/0009-0005-1730-753X"
+  - family-names: Wang
+    given-names: Chen
+    orcid: "https://orcid.org/0000-0003-0204-2362"
+  - family-names: Tang
+    given-names: Yuan
+    orcid: "https://orcid.org/0000-0001-5243-233X"
+  date-published: 2026-08-27
+  doi: 10.21105/joss.10314
+  issn: 2475-9066
+  issue: 124
+  journal: Journal of Open Source Software
+  publisher:
+    name: Open Journals
+  start: 10314
+  title: "Inference Perf: A Benchmarking Tool for GenAI Inference"
+  type: article
+  url: "https://joss.theoj.org/papers/10.21105/joss.10314"
+  volume: 11
+title: "Inference Perf: A Benchmarking Tool for GenAI Inference"
