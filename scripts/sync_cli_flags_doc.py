@@ -78,7 +78,7 @@ def main() -> None:
     expected_content = generate_doc()
 
     if args.check:
-        with open(doc_path, "r") as f:
+        with open(doc_path, "r", encoding="utf-8") as f:
             current_content = f.read()
 
         if current_content != expected_content:
@@ -97,7 +97,7 @@ def main() -> None:
         else:
             print("docs/cli_flags.md is in sync.")
     else:
-        with open(doc_path, "w") as f:
+        with open(doc_path, "w", encoding="utf-8") as f:
             f.write(expected_content)
         print("Updated docs/cli_flags.md")
 

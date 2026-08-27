@@ -62,9 +62,7 @@ class Config(StrictBaseModel):
     @model_validator(mode="after")
     def synthetic_agentic_not_yet_available(self) -> "Config":
         if self.data.type == DataGenType.SyntheticAgentic:
-            raise ValueError(
-                "synthetic_agentic is not yet available and will be enabled in a future release."
-            )
+            raise ValueError("synthetic_agentic is not yet available and will be enabled in a future release.")
         return self
 
     @model_validator(mode="after")

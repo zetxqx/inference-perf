@@ -17,10 +17,23 @@ from inference_perf.config.common import StrictBaseModel
 from pydantic import Field
 
 
+class PerRequestFieldsConfig(StrictBaseModel):
+    request: bool = Field(default=True, description="Include the raw request payload in per-request report entries.")
+    response: bool = Field(default=True, description="Include the raw response payload in per-request report entries.")
+    info: bool = Field(default=True, description="Include response metadata in per-request report entries.")
+    response_chunks: bool = Field(default=True, description="Include streamed response chunks in per-request metadata.")
+    computed_metrics: bool = Field(
+        default=False, description="Include computed per-request latency and token metrics in report entries."
+    )
+
+
 class RequestLifecycleMetricsReportConfig(StrictBaseModel):
     summary: Optional[bool] = Field(default=True, description="Generate a summary report across the whole run.")
     per_stage: Optional[bool] = Field(default=True, description="Generate a report for each load stage.")
     per_request: Optional[bool] = Field(default=False, description="Generate a report with per-request details.")
+    per_request_fields: PerRequestFieldsConfig = Field(
+        default_factory=PerRequestFieldsConfig, description="Select raw and computed fields included in per-request entries."
+    )
     per_adapter: Optional[bool] = Field(default=True, description="Generate a report for each LoRA adapter.")
     per_adapter_stage: Optional[bool] = Field(
         default=False, description="Generate a report for each LoRA adapter within each load stage."
