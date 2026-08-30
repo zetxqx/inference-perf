@@ -321,7 +321,12 @@ tokenizer:
   pretrained_model_name_or_path: "model-id"   # Required model path
   trust_remote_code: true                     # Whether to trust custom tokenizer code
   token: ""                                   # HuggingFace access token for private models
+  load_timeout: 300.0                         # Deadline in seconds for loading the tokenizer,
+                                              # including any download from Hugging Face Hub.
+                                              # Set to null to disable. Default: 300.
 ```
+
+`load_timeout: null` can only be set in a YAML config file; the `--tokenizer.load_timeout` CLI flag parses a float and rejects `null`. The deadline applies to each tokenizer construction independently; a run constructs a tokenizer in several stages (data generation, the model server client, report generation), so the worst-case total wait is a small multiple of `load_timeout`.
 
 ## Full Configuration Examples
 
