@@ -274,6 +274,18 @@ class WekaTraceReplayConfig(SessionReplayConfig):
     use_think_time_only: bool = Field(False, description="Only use think_time attribute instead of timestamps")
     default_block_size: int = Field(64, description="Default block size if not specified in trace")
     num_dataset_entries: int = Field(100, description="Max number of dataset traces to load from HuggingFace")
+    datagen_workers: Optional[int] = Field(
+        None,
+        ge=1,
+        description=(
+            "Number of processes used to reconstruct trace sessions during data generation. "
+            "Defaults to the number of CPUs available to the process (the minimum of the "
+            "scheduling affinity and the cgroup CPU quota), capped at the trace count. "
+            "Set to 1 to disable multiprocessing. Parallel building requires Linux; other "
+            "platforms build serially. Output is deterministic and identical regardless "
+            "of this value."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_trace_sources(self) -> "WekaTraceReplayConfig":
