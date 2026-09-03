@@ -685,3 +685,153 @@ def test_cgroup_cpu_limit(tmp_path: Path) -> None:
     # cgroup v1, unlimited (quota -1).
     (v1 / "cpu" / "cpu.cfs_quota_us").write_text("-1\n")
     assert _cgroup_cpu_limit(v1) is None
+
+
+def test_weka_subagent_separate_session_id(tmp_path: Path) -> None:
+    """With subagent_separate_session_id=True, subagent events carry a derived
+    wire session ID '<parent>::sa:<agent_id>:s<stream>'; parent events and the
+    default (False) path keep the parent session ID unchanged."""
+    from inference_perf.config.datagen.replay import WekaTraceReplayConfig
+
+    trace_data = {
+        "id": "trace_sa_sid",
+        "models": ["m"],
+        "block_size": 2,
+        "tool_tokens": 0,
+        "system_tokens": 0,
+        "requests": [
+            {"t": 0.1, "type": "n", "model": "m", "in": 4, "out": 2, "hash_ids": [10, 20], "api_time": 0.5},
+            {
+                "t": 1.0,
+                "type": "subagent",
+                "agent_id": "subagent_001_e7ec35fa",
+                "subagent_type": "Subagent",
+                "duration_ms": 2000,
+                "requests": [
+                    {"t": 1.0, "type": "n", "model": "m", "in": 4, "out": 2, "hash_ids": [30, 40], "api_time": 0.4},
+                    {"t": 1.5, "type": "n", "model": "m", "in": 6, "out": 2, "hash_ids": [30, 40, 50], "api_time": 0.4},
+                ],
+            },
+            {"t": 3.5, "type": "n", "model": "m", "in": 8, "out": 2, "hash_ids": [10, 20, 60, 70], "api_time": 0.5},
+        ],
+    }
+    trace_file = tmp_path / "trace_sa_sid.json"
+    trace_file.write_text(json.dumps(trace_data))
+
+    def build(separate: bool) -> WekaTraceReplayDataGenerator:
+        data_cfg = DataConfig(type=DataGenType.WekaTraceReplay)
+        data_cfg.weka_trace_replay = WekaTraceReplayConfig(
+            trace_files=[str(trace_file)],
+            default_block_size=2,
+            subagent_separate_session_id=separate,
+        )
+        return WekaTraceReplayDataGenerator(
+            api_config=APIConfig(type=APIType.Chat, streaming=False),
+            config=data_cfg,
+            tokenizer=_mock_tokenizer(),
+            num_workers=1,
+        )
+
+    for separate in (True, False):
+        gen = build(separate)
+        assert len(gen.sessions) == 1
+        session = gen.sessions[0]
+        assert session is not None
+        parent_sid = session.session_id
+
+        from inference_perf.datagen.replay.replay_graph_session_datagen import SessionChatCompletionAPIData
+
+        parent_seen, sa_seen = 0, 0
+        for lazy in gen.get_session_events(0):
+            lazy.session_id = parent_sid  # loadgen stamps this at dispatch
+            api_data = gen.load_lazy_data(lazy)
+            assert isinstance(api_data, SessionChatCompletionAPIData)
+            raw_event_id = api_data.event_id.split(":", 1)[1]
+            if "_sa_" in raw_event_id:
+                sa_seen += 1
+                if separate:
+                    assert api_data.session_id == f"{parent_sid}::sa:subagent_001_e7ec35fa:s0"
+                else:
+                    assert api_data.session_id == parent_sid
+            else:
+                parent_seen += 1
+                assert api_data.session_id == parent_sid
+        assert parent_seen == 2 and sa_seen == 2
+
+
+def test_weka_close_subagent_sessions(tmp_path: Path) -> None:
+    """With close_subagent_sessions=True, only the last event of each subagent
+    stream is marked session_final; parent events never are. The flag requires
+    subagent_separate_session_id=True."""
+    from pydantic import ValidationError
+
+    from inference_perf.config.datagen.replay import WekaTraceReplayConfig
+    from inference_perf.datagen.replay.replay_graph_session_datagen import SessionChatCompletionAPIData
+
+    trace_data = {
+        "id": "trace_sa_close",
+        "models": ["m"],
+        "block_size": 2,
+        "tool_tokens": 0,
+        "system_tokens": 0,
+        "requests": [
+            {"t": 0.1, "type": "n", "model": "m", "in": 4, "out": 2, "hash_ids": [10, 20], "api_time": 0.5},
+            {
+                "t": 1.0,
+                "type": "subagent",
+                "agent_id": "subagent_001_e7ec35fa",
+                "subagent_type": "Subagent",
+                "duration_ms": 2000,
+                "requests": [
+                    {"t": 1.0, "type": "n", "model": "m", "in": 4, "out": 2, "hash_ids": [30, 40], "api_time": 0.4},
+                    {"t": 1.5, "type": "n", "model": "m", "in": 6, "out": 2, "hash_ids": [30, 40, 50], "api_time": 0.4},
+                ],
+            },
+            {"t": 3.5, "type": "n", "model": "m", "in": 8, "out": 2, "hash_ids": [10, 20, 60, 70], "api_time": 0.5},
+        ],
+    }
+    trace_file = tmp_path / "trace_sa_close.json"
+    trace_file.write_text(json.dumps(trace_data))
+
+    # The flag is rejected without a separate subagent session identity.
+    with pytest.raises(ValidationError, match="subagent_separate_session_id"):
+        WekaTraceReplayConfig(
+            trace_files=[str(trace_file)],
+            default_block_size=2,
+            close_subagent_sessions=True,
+        )
+
+    data_cfg = DataConfig(type=DataGenType.WekaTraceReplay)
+    data_cfg.weka_trace_replay = WekaTraceReplayConfig(
+        trace_files=[str(trace_file)],
+        default_block_size=2,
+        subagent_separate_session_id=True,
+        close_subagent_sessions=True,
+    )
+    gen = WekaTraceReplayDataGenerator(
+        api_config=APIConfig(type=APIType.Chat, streaming=False),
+        config=data_cfg,
+        tokenizer=_mock_tokenizer(),
+        num_workers=1,
+    )
+
+    session = gen.sessions[0]
+    assert session is not None
+
+    final_marked = []
+    for lazy in gen.get_session_events(0):
+        lazy.session_id = session.session_id
+        api_data = gen.load_lazy_data(lazy)
+        assert isinstance(api_data, SessionChatCompletionAPIData)
+        raw_event_id = api_data.event_id.split(":", 1)[1]
+        if api_data.session_final:
+            final_marked.append(raw_event_id)
+            assert api_data.session_id == f"{session.session_id}::sa:subagent_001_e7ec35fa:s0"
+        elif "_sa_" in raw_event_id:
+            assert raw_event_id.endswith("turn_0")
+        else:
+            assert api_data.session_id == session.session_id
+
+    # Exactly one final-marked event: the last turn of the single subagent stream.
+    assert len(final_marked) == 1
+    assert final_marked[0].endswith("sa_subagent_001_e7ec35fa_s0_turn_1")

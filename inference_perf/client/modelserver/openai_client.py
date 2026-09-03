@@ -394,6 +394,14 @@ class openAIModelServerClientSession(ModelServerClientSession):
         if self.client.api_config.session_id_header_key and session_id:
             headers[self.client.api_config.session_id_header_key] = session_id
 
+        if self.client.api_config.session_final_header_key and getattr(data, "session_final", False):
+            headers[self.client.api_config.session_final_header_key] = "true"
+
+        # Session identity rides in two places: the header above for the router,
+        # and this top-level body field for the engine (e.g. SGLang radix tagging).
+        if self.client.api_config.session_id_body_field and session_id:
+            payload[self.client.api_config.session_id_body_field] = session_id
+
         session_token_header = self.client.api_config.session_token_header_key
         if session_id and session_token_header:
             session_token = self._session_tokens.get(session_id)
@@ -556,6 +564,31 @@ class openAIModelServerClientSession(ModelServerClientSession):
                 exception=caught_exception,
                 lora_adapter=lora_adapter,
             )
+
+        # Close the session only after its final response has been fully
+        # received and processed, mirroring a real agent harness (the
+        # orchestrator can only close once it has seen the last reply).
+        # Skipped on connection-level failures (no server response). Runs
+        # after end_time is captured, so close latency never pollutes
+        # request metrics. Note: on_completion fired inside process_response,
+        # so a successor event may dispatch concurrently with this close;
+        # that is benign because a closed session's KV is disjoint from its
+        # successors' prefixes.
+        close_path = self.client.api_config.session_close_path
+        if close_path and session_id and getattr(data, "session_final", False) and response is not None:
+            try:
+                close_body = json.dumps({"session_id": session_id})
+                close_headers = {"Content-Type": "application/json"}
+                async with self.session.post(
+                    self.client.uri + close_path, headers=close_headers, data=close_body
+                ) as close_resp:
+                    await close_resp.read()
+                    if close_resp.status != 200:
+                        logger.warning(f"close_session for {session_id}: HTTP {close_resp.status}")
+                    else:
+                        logger.debug(f"close_session for {session_id}: HTTP {close_resp.status}")
+            except Exception as e:
+                logger.warning(f"close_session for {session_id} failed: {e}")
 
         if not info:
             info = InferenceInfo(request_metrics=RequestMetrics(text=Text(input_tokens=0)))
