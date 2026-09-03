@@ -31,6 +31,8 @@ def mock_client() -> MagicMock:
     client.api_config.headers = {}
     client.api_config.response_format = None
     client.api_config.streaming = False
+    client.api_config.session_id_body_field = None
+    client.api_config.session_close_path = None
     client.tokenizer = MagicMock()
     client.metrics_collector = MagicMock()
     client.cert_path = None
@@ -464,3 +466,128 @@ async def test_session_token_replayed_for_user_session_id_workloads(mock_client:
 
     await session.process_request(mock_data, stage_id=1, scheduled_time=0.0)
     assert mock_http_session.post.call_args.kwargs["headers"]["x-session-token"] == "encoded-pod-a"
+
+
+@pytest.mark.asyncio
+async def test_session_final_header_injected_when_marked(mock_client: MagicMock, mock_data: MagicMock) -> None:
+    mock_data.session_id = "trace0::sa:subagent_001:s0"
+    mock_data.session_final = True
+    mock_client.api_config.session_id_header_key = "x-session-id"
+    mock_client.api_config.session_final_header_key = "x-session-final"
+
+    session = openAIModelServerClientSession(mock_client)
+    session.session = MagicMock()
+
+    mock_post_ctx = MagicMock()
+    mock_post_ctx.__aenter__ = AsyncMock(side_effect=asyncio.TimeoutError("force exit"))
+    mock_post_ctx.__aexit__ = AsyncMock(return_value=None)
+    session.session.post.return_value = mock_post_ctx
+
+    await session.process_request(mock_data, stage_id=1, scheduled_time=0.0)
+
+    headers_passed = session.session.post.call_args.kwargs["headers"]
+    assert headers_passed.get("x-session-final") == "true"
+    assert headers_passed.get("x-session-id") == "trace0::sa:subagent_001:s0"
+
+
+@pytest.mark.asyncio
+async def test_session_final_header_not_injected_when_not_marked(mock_client: MagicMock, mock_data: MagicMock) -> None:
+    mock_data.session_id = "trace0"
+    mock_data.session_final = False
+    mock_client.api_config.session_id_header_key = "x-session-id"
+    mock_client.api_config.session_final_header_key = "x-session-final"
+
+    session = openAIModelServerClientSession(mock_client)
+    session.session = MagicMock()
+
+    mock_post_ctx = MagicMock()
+    mock_post_ctx.__aenter__ = AsyncMock(side_effect=asyncio.TimeoutError("force exit"))
+    mock_post_ctx.__aexit__ = AsyncMock(return_value=None)
+    session.session.post.return_value = mock_post_ctx
+
+    await session.process_request(mock_data, stage_id=1, scheduled_time=0.0)
+
+    headers_passed = session.session.post.call_args.kwargs["headers"]
+    assert "x-session-final" not in headers_passed
+
+
+@pytest.mark.asyncio
+async def test_session_id_injected_into_body_when_configured(mock_client: MagicMock, mock_data: MagicMock) -> None:
+    import json as jsonlib
+
+    mock_data.session_id = "trace0::sa:subagent_001:s0"
+    mock_client.api_config.session_id_body_field = "session_id"
+
+    session = openAIModelServerClientSession(mock_client)
+    session.session = MagicMock()
+
+    mock_post_ctx = MagicMock()
+    mock_post_ctx.__aenter__ = AsyncMock(side_effect=asyncio.TimeoutError("force exit"))
+    mock_post_ctx.__aexit__ = AsyncMock(return_value=None)
+    session.session.post.return_value = mock_post_ctx
+
+    await session.process_request(mock_data, stage_id=1, scheduled_time=0.0)
+
+    body = jsonlib.loads(session.session.post.call_args.kwargs["data"])
+    assert body["session_id"] == "trace0::sa:subagent_001:s0"
+    assert body["mock"] == "data"
+
+
+def _close_test_response() -> MagicMock:
+    resp = MagicMock()
+    resp.status = 200
+    resp.text = AsyncMock(return_value="{}")
+    resp.read = AsyncMock(return_value=b"")
+    resp.headers = MagicMock()
+    resp.headers.get = MagicMock(return_value=None)
+    return resp
+
+
+@pytest.mark.asyncio
+async def test_close_session_posted_after_final_response(mock_client: MagicMock, mock_data: MagicMock) -> None:
+    import json as jsonlib
+
+    mock_data.session_id = "close-me"
+    mock_data.session_final = True
+    mock_client.api_config.session_close_path = "/close_session"
+    mock_client.api_config.streaming = False
+
+    session = openAIModelServerClientSession(mock_client)
+    session.session = MagicMock()
+
+    mock_response = _close_test_response()
+    mock_post_ctx = MagicMock()
+    mock_post_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_post_ctx.__aexit__ = AsyncMock(return_value=None)
+    session.session.post.return_value = mock_post_ctx
+
+    await session.process_request(mock_data, stage_id=1, scheduled_time=0.0)
+
+    # Two POSTs: the inference request first, then the close call.
+    assert session.session.post.call_count == 2
+    close_call = session.session.post.call_args_list[1]
+    assert close_call.args[0] == "http://test-uri/close_session"
+    assert jsonlib.loads(close_call.kwargs["data"]) == {"session_id": "close-me"}
+    # The inference response was fully processed before the close was sent.
+    mock_data.process_response.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_close_session_not_posted_when_not_final(mock_client: MagicMock, mock_data: MagicMock) -> None:
+    mock_data.session_id = "keep-open"
+    mock_data.session_final = False
+    mock_client.api_config.session_close_path = "/close_session"
+    mock_client.api_config.streaming = False
+
+    session = openAIModelServerClientSession(mock_client)
+    session.session = MagicMock()
+
+    mock_response = _close_test_response()
+    mock_post_ctx = MagicMock()
+    mock_post_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_post_ctx.__aexit__ = AsyncMock(return_value=None)
+    session.session.post.return_value = mock_post_ctx
+
+    await session.process_request(mock_data, stage_id=1, scheduled_time=0.0)
+
+    assert session.session.post.call_count == 1

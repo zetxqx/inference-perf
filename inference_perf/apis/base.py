@@ -126,6 +126,7 @@ class InferenceAPIData(BaseModel):
     # loadgen should assign this request to preferred worker if possible
     preferred_worker_id: int = -1  # no preferred worker by default
     session_id: Optional[str] = None  # set by loadgen for session-based workloads
+    session_final: bool = False  # final request of its session; triggers api.session_final_header_key
     graph_event_id: Optional[str] = None
     otel_context: Optional[dict[str, str]] = None  # OTEL trace context for distributed tracing
     stage_id: int = 0  # stage id

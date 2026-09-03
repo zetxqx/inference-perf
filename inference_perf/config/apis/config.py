@@ -82,6 +82,31 @@ class APIConfig(StrictBaseModel):
     session_id_header_key: Optional[str] = Field(
         default=None, description="Header used to send the session ID with each request in multi-turn benchmarks."
     )
+    # Engine-side session tag (e.g. SGLang session-radix cache): the same wire
+    # session ID is injected as a top-level JSON field in the request body, so
+    # the router reads the header and the engine reads the body field.
+    session_id_body_field: Optional[str] = Field(
+        default=None,
+        description="Top-level request-body field to carry the session ID (e.g. 'session_id' for SGLang session-radix tagging).",
+    )
+    # Client-side session close (e.g. SGLang /close_session): POSTed with body
+    # {"session_id": <id>} after the final response of a session has been fully
+    # received, mirroring a real agent harness that closes only after it sees
+    # the last reply. Sent to the same base URL as inference requests - use
+    # against a direct engine endpoint; a routed gateway may deliver it to the
+    # wrong pod.
+    session_close_path: Optional[str] = Field(
+        default=None,
+        description="URL path POSTed after the final response of a session to close it (e.g. '/close_session').",
+    )
+    # Session-close signal (e.g. x-session-final for the llm-d-router session
+    # control protocol): the header is sent with value "true" on requests the
+    # data generator marks as the final turn of their session, so the router
+    # can release session state / call the engine's close-session API.
+    session_final_header_key: Optional[str] = Field(
+        default=None,
+        description="Header sent as '<key>: true' on the final request of a session to signal session close to the router.",
+    )
     # Response header carrying a server-assigned session token (e.g. x-session-token
     # from the llm-d-router session affinity plugin). When set, the token received in
     # a session's response is echoed as a request header on subsequent requests of

@@ -286,6 +286,38 @@ class WekaTraceReplayConfig(SessionReplayConfig):
             "of this value."
         ),
     )
+    subagent_separate_session_id: bool = Field(
+        False,
+        description=(
+            "Give each subagent stream its own wire session identity. When True, subagent "
+            "requests carry '<session_id>::sa:<agent_id>:s<stream>' in the session_id/"
+            "session-token headers (api.session_id_header_key / session_token_header_key) "
+            "instead of the parent session's ID, so session-affinity routers schedule them "
+            "independently. Replay semantics (dependency graph, parent-waits-for-subagent, "
+            "failure propagation, session pool accounting) are unchanged."
+        ),
+    )
+    close_subagent_sessions: bool = Field(
+        False,
+        description=(
+            "Mark the last request of each subagent stream as session-final, so the client "
+            "sends api.session_final_header_key (e.g. 'x-session-final: true') on it and a "
+            "session-control router can close the subagent's session while the parent "
+            "session stays open. Requires subagent_separate_session_id=true; otherwise the "
+            "close signal would carry the parent's session ID and end the parent session "
+            "mid-replay."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_close_subagent_sessions(self) -> "WekaTraceReplayConfig":
+        if self.close_subagent_sessions and not self.subagent_separate_session_id:
+            raise ValueError(
+                "close_subagent_sessions=true requires subagent_separate_session_id=true: "
+                "without a separate subagent session ID the final-mark would close the "
+                "parent session in the middle of the replay."
+            )
+        return self
 
     @model_validator(mode="after")
     def validate_trace_sources(self) -> "WekaTraceReplayConfig":

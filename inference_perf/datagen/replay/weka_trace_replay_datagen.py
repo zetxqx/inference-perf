@@ -65,6 +65,7 @@ import multiprocessing
 import os
 from pathlib import Path
 import random
+import re
 import sys
 import time
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union, Annotated
@@ -73,6 +74,7 @@ from multiprocessing.managers import SyncManager
 from huggingface_hub import hf_hub_download
 from pydantic import BaseModel, Field
 
+from inference_perf.apis import InferenceAPIData, LazyLoadInferenceAPIData
 from inference_perf.config import APIConfig, DataConfig
 from inference_perf.datagen.replay.replay_graph_session_datagen import (
     ReplaySession,
@@ -815,6 +817,12 @@ def _build_session_for_trace(trace_index: int) -> Tuple[int, Optional[ReplaySess
 # WekaTraceReplayDataGenerator Class
 # =============================================================================
 
+# Matches the raw event ID of a subagent call (event_{i:03d}_{call_id} with
+# call_id = sa_{agent_id}_s{stream}_turn_{k}). Greedy (.+) backtracks to the
+# last _s<digits>_turn_<digits>, so agent IDs containing underscores parse
+# correctly.
+_SA_EVENT_ID_RE = re.compile(r"^event_\d+_sa_(?P<agent>.+)_s(?P<stream>\d+)_turn_\d+$")
+
 
 class WekaTraceReplayDataGenerator(ReplayGraphSessionGeneratorBase):
     """Data generator that replays LLM requests from Weka trace files."""
@@ -1285,6 +1293,9 @@ class WekaTraceReplayDataGenerator(ReplayGraphSessionGeneratorBase):
                         completion_tokens=creq.output_length,
                         temperature=0.0,
                         max_tokens_recorded=creq.output_length,
+                        # Final turn of this subagent stream; consumed by
+                        # close_subagent_sessions to emit the session-close header.
+                        extra_attributes={"session_final": True} if k + 1 == len(cp.stream_requests) else {},
                     )
                 )
 
@@ -1299,3 +1310,23 @@ class WekaTraceReplayDataGenerator(ReplayGraphSessionGeneratorBase):
         if self.weka_config.use_static_model:
             return {m: self.weka_config.static_model_name for m in trace.models}
         return configured
+
+    def load_lazy_data(self, data: LazyLoadInferenceAPIData) -> InferenceAPIData:
+        api_data = super().load_lazy_data(data)
+        event_id = getattr(api_data, "event_id", "")
+        internal_session_id = event_id.split(":", 1)[0] if ":" in event_id else event_id
+        raw_event_id = event_id.split(":", 1)[1] if ":" in event_id else event_id
+        m = _SA_EVENT_ID_RE.match(raw_event_id)
+        if m and self.weka_config.subagent_separate_session_id and api_data.session_id:
+            # Rewrite only the wire-visible session identity for subagent events.
+            # Internal bookkeeping (predecessor waits, failure propagation, session
+            # pool, eviction) keys off the event_id prefix and is unaffected.
+            api_data.session_id = f"{api_data.session_id}::sa:{m.group('agent')}:s{m.group('stream')}"
+        if m and self.weka_config.close_subagent_sessions:
+            # Final-mark the last turn of each subagent stream so the client sends
+            # the session-close header (api.session_final_header_key) with it.
+            state = self.session_graph_state.get(internal_session_id)
+            gc = state.graph.events[raw_event_id].call if state and raw_event_id in state.graph.events else None
+            if gc is not None and gc.attributes and gc.attributes.get("session_final"):
+                api_data.session_final = True
+        return api_data
