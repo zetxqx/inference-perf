@@ -13,11 +13,11 @@
 # limitations under the License.
 import logging
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, List, Mapping, Optional
 
 import yaml
 from inference_perf.config.common import StrictBaseModel
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from inference_perf.config.apis import APIConfig
 from inference_perf.config.circuit_breaker import CircuitBreakerConfig
@@ -32,11 +32,15 @@ from inference_perf.config.loadgen import (
     TraceSessionReplayLoadStage,
 )
 from inference_perf.config.metrics import MetricsClientConfig
+from inference_perf.config.redaction import REDACTED, redact, redacted_credentials
 from inference_perf.config.reportgen import ReportConfig
 from inference_perf.config.utils import CustomTokenizerConfig
 
 
 class Config(StrictBaseModel):
+    # A validation error would otherwise quote the input, which holds credentials.
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     api: APIConfig = Field(
         default=APIConfig(), description="API endpoint type and request options used for benchmark requests."
     )
@@ -58,6 +62,20 @@ class Config(StrictBaseModel):
     circuit_breakers: Optional[List[CircuitBreakerConfig]] = Field(
         default=None, description="Circuit breakers that stop the run when observed metrics cross configured thresholds."
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_placeholder_credentials(cls, data: Any) -> Any:
+        # A saved or dumped config holds a placeholder in place of each credential.
+        # read_config validates the merged input, so a credential supplied on the command line counts.
+        placeholders = redacted_credentials(data, cls) if isinstance(data, Mapping) else []
+        if placeholders:
+            raise ValueError(
+                f"These credentials hold a masked placeholder, such as {REDACTED}, instead of a value: "
+                f"{', '.join(placeholders)}. Supply the real values in the config file or on the command line, "
+                "or remove these settings."
+            )
+        return data
 
     @model_validator(mode="after")
     def validate_trace_replay_load_type(self) -> "Config":
@@ -133,7 +151,11 @@ def read_config(config_file: Optional[str] = None, cli_overrides: Optional[dict[
                 standard_stages.append(StandardLoadStage(**stage))
             merged_cfg["load"]["stages"] = standard_stages
 
+    # The echoed config is the copy people paste into bug reports, so it goes out
+    # with its credentials masked. merged_cfg itself keeps them, since the run
+    # needs them.
     logger.info(
-        "Benchmarking with the following config:\n\n%s\n", yaml.dump(merged_cfg, sort_keys=False, default_flow_style=False)
+        "Benchmarking with the following config:\n\n%s\n",
+        yaml.dump(redact(merged_cfg, Config), sort_keys=False, default_flow_style=False),
     )
     return Config(**merged_cfg)

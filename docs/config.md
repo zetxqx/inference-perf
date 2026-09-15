@@ -12,6 +12,7 @@
    - [Reporting](#reporting)
    - [Storage](#storage)
    - [Tokenizer](#tokenizer)
+   - [Credentials](#credentials)
 3. [Full Configuration Examples](#full-configuration-examples)
 4. [Advanced Use Cases](#advanced-use-cases)
    - [OpenTelemetry Trace Replay](#opentelemetry-trace-replay)
@@ -367,6 +368,24 @@ tokenizer:
 ```
 
 `load_timeout: null` can only be set in a YAML config file; the `--tokenizer.load_timeout` CLI flag parses a float and rejects `null`. The deadline applies to each tokenizer construction independently; a run constructs a tokenizer in several stages (data generation, the model server client, report generation), so the worst-case total wait is a small multiple of `load_timeout`.
+
+### Credentials
+
+A config can carry a credential in three places: `server.api_key`, `tokenizer.token`, and an authentication header under `api.headers`.
+
+A run renders its config twice, to the log at startup and to `config.yaml` in the report bundle. Both copies replace these values with `[REDACTED]`, so pod logs and reports uploaded to GCS or S3 do not carry keys. The requests themselves still use the real values.
+
+A header is masked when its name contains `auth`, `key`, `token`, `secret` or `cookie`, ignoring case. That covers `Authorization`, `x-api-key`, Kong's `apikey`, `X-Auth-Token` and Azure API Management's `Ocp-Apim-Subscription-Key`. Every other header is left as it is, so a rendered config still shows the routing setup the run used.
+
+An empty value, such as `api_key: ""`, is not a credential and is left as it is.
+
+Config validation errors name the setting that failed but do not quote its value, since the value can be a credential.
+
+Because the saved `config.yaml` is redacted, re-running from it needs the credentials supplied again. Loading a config whose credentials still hold `[REDACTED]`, or the `**********` pydantic writes for a secret, fails with an error naming each setting. Supply the value in the file or with its flag, or remove the setting:
+
+```bash
+inference-perf --config_file reports-20260914-101500/config.yaml --server.api_key "$API_KEY"
+```
 
 ## Full Configuration Examples
 
