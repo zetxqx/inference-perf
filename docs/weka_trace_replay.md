@@ -55,7 +55,24 @@ data:
     trace_idle_gap_cap_seconds: 1.0 # Caps think-time delay between turns to 1s
     # datagen_workers: 16 # Processes used to build sessions at startup.
                           # Defaults to available CPU cores; set to 1 for serial.
+
+report:
+  request_lifecycle:
+    summary: true
+    per_stage: true
+    per_request: true
+    # Recommended for trace replay: Weka requests carry very large prompts, so
+    # storing raw payloads can grow per_request_lifecycle_metrics.json to
+    # multiple GB per run. Keep metadata and computed metrics only.
+    per_request_fields:
+      request: false          # Drop raw request payloads
+      response: false         # Drop raw response payloads
+      response_chunks: false  # Drop raw streaming chunks
+      info: true              # Keep timestamps, token counts, server usage (cached_tokens)
+      computed_metrics: true  # Keep per-request TTFT/TPOT/ITL
 ```
+
+See the [Reporting section of config.md](config.md#reporting) for details on `per_request_fields`.
 
 ---
 
