@@ -324,14 +324,22 @@ class Worker(mp.Process):
                     lora_adapter: Optional[str],
                 ) -> None:
                     inflight = False
+                    holding_permit = True
                     try:
                         current_time = time.perf_counter()
                         sleep_time = request_time - current_time
                         if sleep_time > 0:
                             await sleep(sleep_time)
 
-                        # Wait for dependencies before dispatching (OTel trace replay)
+                        # Wait for dependencies before dispatching (session replay).
+                        # A session's events are all enqueued at dispatch and run
+                        # in order, so a parked event must not hold a worker
+                        # permit: otherwise queued-but-waiting events exhaust
+                        # worker_max_concurrency and the worker never reads the
+                        # first turn of the other sessions pinned to it.
                         if hasattr(request_data, "wait_for_predecessors_and_substitute"):
+                            semaphore.release()
+                            holding_permit = False
                             await request_data.wait_for_predecessors_and_substitute()
 
                         # Check if request should be skipped (e.g., session failed in OTel replay)
@@ -350,6 +358,13 @@ class Worker(mp.Process):
                             logger.debug(f"[Worker {self.id}] stage tearing down, not dispatching new request")
                             return
 
+                        if not holding_permit:
+                            await semaphore.acquire()
+                            holding_permit = True
+                            if self.draining:
+                                logger.debug(f"[Worker {self.id}] stage tearing down, not dispatching new request")
+                                return
+
                         with self.active_requests_counter.get_lock():
                             self.active_requests_counter.value += 1
                             inflight = True
@@ -366,7 +381,8 @@ class Worker(mp.Process):
                                 self.active_requests_counter.value -= 1
                         with self.finished_requests_counter.get_lock():
                             self.finished_requests_counter.value += 1
-                        semaphore.release()
+                        if holding_permit:
+                            semaphore.release()
 
                 try:
                     stage_id, request, request_time, lora_adapter = item
@@ -651,10 +667,10 @@ class LoadGenerator:
         When a session completes, the next pending session is started to fill the pool.
 
         Note on worker_max_concurrency: all events for a session are enqueued immediately
-        when the session starts, even if most events are waiting on predecessors. Each waiting
-        event holds a worker semaphore slot for the duration of its wait. Since waiting is done
-        via asyncio.Event (zero threads — just a suspended coroutine), the cost of a high value
-        is negligible. Rule of thumb: worker_max_concurrency >= concurrent_sessions * avg_events_per_session.
+        when the session starts, even if most events are waiting on predecessors. A waiting
+        event does not hold a worker semaphore slot (it releases its permit while parked and
+        re-acquires one before dispatch), so worker_max_concurrency bounds in-flight requests
+        per worker, not queued events.
         """
         logger.info("Stage %d - session-based run started", stage_id)
 

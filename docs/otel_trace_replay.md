@@ -88,13 +88,12 @@ load:
     - concurrent_sessions: 4           # Required: max sessions running simultaneously
       num_sessions: 20                 # Optional: omit to run all remaining sessions
       session_rate: 2.0                # Optional: max new sessions/sec (omit for no limit)
-  worker_max_concurrency: 500          # Optional: set high for trace replay (default: 100)
-                                       # Rule of thumb: concurrent_sessions × 50-100
+  worker_max_concurrency: 100          # Optional: max in-flight requests per worker (default: 100)
 ```
 
 > **Important:** `data.type: otel_trace_replay` **requires** `load.type: trace_session_replay`. A validator enforces this at startup.
 >
-> **Note on `worker_max_concurrency`:** Set this high for trace replay. All events in a session are enqueued immediately, and events waiting for predecessors hold concurrency slots. However, waiting is done via `asyncio.Event` (zero threads—just suspended coroutines), so high values have negligible cost. **Rule of thumb:** `concurrent_sessions × 50` to `concurrent_sessions × 100` depending on your trace complexity.
+> **Note on `worker_max_concurrency`:** All events in a session are enqueued immediately, but an event waiting for its predecessors does not hold a concurrency slot, so `worker_max_concurrency` bounds in-flight requests per worker. Sessions are pinned to workers, so `num_workers × worker_max_concurrency` must cover the peak in-flight requests you expect (roughly `concurrent_sessions` plus subagent fan-out).
 
 ### Router Session Affinity
 
