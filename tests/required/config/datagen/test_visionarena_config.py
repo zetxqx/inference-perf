@@ -70,6 +70,23 @@ def test_visionarena_insertion_point_accepts_distribution() -> None:
     assert not isinstance(va.insertion_point, float)
 
 
+@pytest.mark.parametrize(
+    "insertion_point",
+    [
+        -0.1,
+        1.1,
+        {"type": "uniform"},
+        {"type": "uniform", "min": -1, "max": 1},
+        {"type": "uniform", "min": 0, "max": 2},
+        {"type": "fixed", "min": 0, "max": 1, "mean": 3},
+        {"type": "normal", "min": 0, "max": 1},
+    ],
+)
+def test_visionarena_rejects_out_of_range_insertion_points(insertion_point: object) -> None:
+    with pytest.raises(ValidationError, match="insertion_point"):
+        VisionArenaConfig(insertion_point=insertion_point)
+
+
 def test_visionarena_absent_for_other_types() -> None:
     config = Config.model_validate({"data": {"type": DataGenType.Mock}})
     assert config.data.visionarena is None
