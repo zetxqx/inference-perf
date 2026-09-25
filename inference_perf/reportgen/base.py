@@ -912,9 +912,6 @@ def build_per_request_lifecycle_entry(
         "start_time": metric.start_time,
         "end_time": metric.end_time,
     }
-    # Session-based workloads stamp the session on every request; without it in
-    # the per-request report, requests cannot be grouped back into sessions
-    # (info.graph_event_id only names the position within a session).
     if metric.session_id is not None:
         entry["session_id"] = metric.session_id
 
